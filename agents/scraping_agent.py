@@ -1,157 +1,157 @@
 # /agents/scraping_agent.py
+import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 import httpx
-from bs4 import BeautifulSoup
-import re
 from typing import List, Optional
+import asyncio
+from dotenv import load_dotenv
+
+load_dotenv() # To load environment variables if you store the API key there
 
 app = FastAPI()
 
-REQUEST_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-    'Connection': 'keep-alive',
-}
+# --- Configuration ---
+# It's better to get this from an environment variable in a real app
+SCRAPINGDOG_API_KEY = os.getenv("SCRAPINGDOG_API_KEY")
+GOOGLE_NEWS_API_URL = "https://api.scrapingdog.com/google_news"
+SCRAPE_API_URL = "https://api.scrapingdog.com/scrape"
 
-class NewsArticle(BaseModel):
-    date: Optional[str] = None
-    symbol: Optional[str] = None # StockTitan provides symbols directly
-    title: str
-    url: HttpUrl # Validate that it's a URL
-    source: str = "StockTitan"
+REQUEST_TIMEOUT = 45.0 # Timeout for external API calls, summarization can take time
 
+# --- Pydantic Models ---
 class ScrapeRequest(BaseModel):
-    # We can search by general query (company name) or specific symbol
-    query: str # e.g., "Apple", "TSMC", "NVDA"
-    # symbol: Optional[str] = None # Could refine to search by symbol if their URL structure supports it better
+    query: str
+    results_limit: int = 10 # How many initial news results to fetch
+    summary_limit: int = 4  # How many of those to summarize
 
-class ScrapeResponse(BaseModel):
-    search_query: str
-    articles: List[NewsArticle] = []
-    # We'll keep eps_surprise_percentage for now, as it was part of the original design.
-    # It can be populated by other means or simulated if this agent doesn't provide it.
-    eps_surprise_percentage: Optional[float] = None
-    error_message: Optional[str] = None
+class InitialNewsArticle(BaseModel):
+    title: Optional[str] = None
+    snippet: Optional[str] = None
+    source: Optional[str] = None
+    lastUpdated: Optional[str] = None # Note: JSON uses 'lastUpdated', Python prefers 'last_updated'
+    url: HttpUrl # Pydantic will validate this is a URL
 
-async def fetch_stocktitan_news(search_query: str) -> dict:
-    """
-    Fetches news articles from StockTitan based on a search query.
-    """
-    base_url = "https://www.stocktitan.net"
-    # query_param will be the company name or symbol
-    search_url = f"{base_url}/search?query={search_query.lower()}&filter=news"
-    
-    scraped_data = {
-        "search_query": search_query,
-        "articles": [],
-        "eps_surprise_percentage": None, # StockTitan news search won't give this directly
-        "error_message": None
+class SummarizedNewsArticle(InitialNewsArticle):
+    summary: Optional[str] = None
+
+# --- Helper Functions ---
+async def fetch_initial_news_list(query: str, results_limit: int, client: httpx.AsyncClient) -> List[InitialNewsArticle]:
+    """Fetches a list of news articles from ScrapingDog Google News API."""
+    params = {
+        "api_key": SCRAPINGDOG_API_KEY,
+        "query": query,
+        "results": results_limit,
+        "country": "us", # As per your example
+        "page": 0
     }
-
     try:
-        async with httpx.AsyncClient(headers=REQUEST_HEADERS, timeout=20.0, follow_redirects=True) as client:
-            print(f"ScrapingAgent: Fetching {search_url}")
-            response = await client.get(search_url)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Find the table or list containing news articles
-            # Based on the HTML provided, news articles are in a <table> with class "custom-table"
-            # inside a div with class "search-results-card" and "search-results-body"
-            news_table = soup.find("div", class_="search-results-card")
-            if news_table:
-                news_table = news_table.find("table", class_="custom-table")
-
-            if not news_table:
-                print(f"ScrapingAgent: News table not found on {search_url}")
-                scraped_data["error_message"] = "News table structure not found on StockTitan search page."
-                # Simulate EPS for core companies if no news, to fulfill other parts of the brief
-                if search_query.upper() == "TSM" or "TSMC" in search_query.upper():
-                    scraped_data["eps_surprise_percentage"] = 4.0
-                elif search_query.upper() == "SAMSUNG" or "005930.KS" in search_query.upper():
-                    scraped_data["eps_surprise_percentage"] = -2.0
-                return scraped_data
-
-            articles_found = []
-            for row in news_table.find("tbody").find_all("tr"):
-                cols = row.find_all("td")
-                if len(cols) == 3: # Expecting Date, Symbol(s), Title
-                    date_span = cols[0].find("span", {"name": "date"})
-                    date_text = date_span.text.strip() if date_span else None
-                    
-                    symbol_links = cols[1].find_all("a", class_="symbol-link")
-                    symbols_text = ", ".join([s.text.strip() for s in symbol_links]) if symbol_links else None
-                    
-                    title_tag = cols[2].find("a")
-                    title_text = title_tag.text.strip() if title_tag else "No title found"
-                    
-                    # Construct absolute URL if relative
-                    article_relative_url = title_tag['href'] if title_tag and title_tag.has_attr('href') else None
-                    article_full_url = None
-                    if article_relative_url:
-                        if article_relative_url.startswith("http"):
-                            article_full_url = article_relative_url
-                        else:
-                            article_full_url = base_url + "/" + article_relative_url.lstrip("/")
-                    
-                    if article_full_url:
-                        articles_found.append(NewsArticle(
-                            date=date_text,
-                            symbol=symbols_text,
-                            title=title_text,
-                            url=article_full_url
-                        ))
-            
-            scraped_data["articles"] = articles_found
-            if not articles_found:
-                print(f"ScrapingAgent: No articles parsed from table on {search_url}, though table was found.")
-            else:
-                 print(f"ScrapingAgent: Found {len(articles_found)} articles for '{search_query}'")
-
-
-            # Simulate EPS surprise for key companies if requested by query,
-            # as this specific data isn't in the news list itself.
-            # This is a temporary measure.
-            if search_query.upper() == "TSM" or "TSMC" in search_query.upper():
-                scraped_data["eps_surprise_percentage"] = 4.0
-            elif search_query.upper() == "SAMSUNG" or "005930.KS" in search_query.upper():
-                scraped_data["eps_surprise_percentage"] = -2.0
-
-
-    except httpx.HTTPStatusError as e:
-        scraped_data["error_message"] = f"HTTP error fetching data for {search_query}: {e.response.status_code} on URL {e.request.url}"
-        print(scraped_data["error_message"])
-    except httpx.RequestError as e:
-        scraped_data["error_message"] = f"Request error fetching data for {search_query}: {str(e)} for URL {e.request.url}"
-        print(scraped_data["error_message"])
-    except Exception as e:
-        scraped_data["error_message"] = f"An unexpected error occurred while scraping {search_query}: {str(e)}"
-        print(scraped_data["error_message"])
+        print(f"ScrapingAgent: Fetching initial news list for query: '{query}'")
+        response = await client.get(GOOGLE_NEWS_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+        data = response.json()
         
-    return scraped_data
+        articles = []
+        if "news_results" in data and isinstance(data["news_results"], list):
+            for item in data["news_results"]:
+                try:
+                    # Ensure URL is valid before creating Pydantic model
+                    if item.get("url"):
+                        articles.append(InitialNewsArticle(**item))
+                except Exception as e:
+                    print(f"ScrapingAgent: Error parsing individual news item: {item}. Error: {e}")
+            print(f"ScrapingAgent: Successfully fetched {len(articles)} initial articles.")
+            return articles
+        else:
+            print(f"ScrapingAgent: 'news_results' not found or not a list in API response. Response: {data}")
+            return []
+    except httpx.HTTPStatusError as e:
+        print(f"ScrapingAgent: HTTP error fetching initial news list: {e.response.status_code} - {e.response.text}")
+        return []
+    except httpx.RequestError as e:
+        print(f"ScrapingAgent: Request error fetching initial news list: {e}")
+        return []
+    except Exception as e: # Catch-all for other errors like JSON decoding
+        print(f"ScrapingAgent: Unexpected error fetching initial news list: {e}")
+        return []
 
-@app.post("/scrape_news", response_model=ScrapeResponse) # Renamed endpoint for clarity
-async def scrape_company_news(request: ScrapeRequest):
+async def fetch_article_summary(article_url: str, client: httpx.AsyncClient) -> Optional[str]:
+    """Fetches an AI-generated summary for a given article URL using ScrapingDog."""
+    params = {
+        'api_key': SCRAPINGDOG_API_KEY,
+        'url': article_url,
+        'dynamic': 'false', # As per your example, set to 'true' if JS rendering is needed
+        'ai_query': 'Please provide a detailed summary of the news article, including all the key points, background context, and any important developments. Ensure that the summary is written in a comprehensive and descriptive manner, capturing the full scope of the story. Additionally, include the overall emotional tone or sentiment conveyed by the news—such as whether it is optimistic, tragic, alarming, hopeful, neutral, etc.—and explain why that emotion is appropriate based on the content.'
+    }
+    try:
+        print(f"ScrapingAgent: Fetching summary for URL: {article_url}")
+        response = await client.get(SCRAPE_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        # The response.text here *is* the summary based on your example.
+        # If it were JSON, you'd use response.json().get("summary_field_name")
+        summary = response.text 
+        print(f"ScrapingAgent: Successfully fetched summary for {article_url[:50]}...")
+        return summary.strip() if summary else None
+    except httpx.HTTPStatusError as e:
+        print(f"ScrapingAgent: HTTP error fetching summary for {article_url}: {e.response.status_code} - {e.response.text}")
+        return None
+    except httpx.RequestError as e:
+        print(f"ScrapingAgent: Request error fetching summary for {article_url}: {e}")
+        return None
+    except Exception as e:
+        print(f"ScrapingAgent: Unexpected error fetching summary for {article_url}: {e}")
+        return None
+
+# --- API Endpoint ---
+@app.post("/scrape_summarized_news", response_model=List[SummarizedNewsArticle])
+async def scrape_news_and_summarize(request: ScrapeRequest):
+    if not SCRAPINGDOG_API_KEY:
+        raise HTTPException(status_code=500, detail="ScrapingDog API key not configured.")
     if not request.query:
-        raise HTTPException(status_code=400, detail="A search query (company name or keyword) must be provided.")
-    
-    # Using the general 'query' for StockTitan search
-    scraped_data = await fetch_stocktitan_news(request.query)
-    
-    # You might want to decide if an error message alone means the whole operation failed
-    # For now, return what was found, including any error messages.
-    return ScrapeResponse(**scraped_data)
+        raise HTTPException(status_code=400, detail="A search query must be provided.")
+
+    async with httpx.AsyncClient() as client:
+        # 1. Fetch the initial list of articles
+        initial_articles = await fetch_initial_news_list(request.query, request.results_limit, client)
+
+        if not initial_articles:
+            print(f"ScrapingAgent: No initial articles found for query '{request.query}'. Returning empty list.")
+            return []
+
+        # 2. Select top N articles for summarization (as per request.summary_limit)
+        articles_to_summarize = initial_articles[:request.summary_limit]
+        
+        print(f"ScrapingAgent: Attempting to summarize top {len(articles_to_summarize)} articles.")
+
+        # 3. Create tasks to fetch summaries concurrently
+        summary_tasks = []
+        for article_stub in articles_to_summarize:
+            summary_tasks.append(fetch_article_summary(str(article_stub.url), client)) # Ensure URL is string
+
+        summaries = await asyncio.gather(*summary_tasks)
+
+        # 4. Combine initial article data with their summaries
+        final_articles: List[SummarizedNewsArticle] = []
+        for i, article_stub in enumerate(articles_to_summarize):
+            summary_content = summaries[i] # This will be None if summarization failed
+            summarized_article = SummarizedNewsArticle(
+                **article_stub.model_dump(), # Spread fields from InitialNewsArticle
+                summary=summary_content
+            )
+            final_articles.append(summarized_article)
+        
+        # Optionally, add the rest of the initial articles that weren't summarized
+        # for article_stub in initial_articles[request.summary_limit:]:
+        #     final_articles.append(SummarizedNewsArticle(**article_stub.model_dump(), summary=None))
+
+        print(f"ScrapingAgent: Processed {len(final_articles)} articles for query '{request.query}'.")
+        return final_articles
 
 # To run this agent (from the root directory of your project):
 # cd agents
 # uvicorn scraping_agent:app --reload --port 8004
 #
-# Test with curl:
-# curl -X POST -H "Content-Type: application/json" -d '{"query": "Apple"}' http://127.0.0.1:8004/scrape_news
-# curl -X POST -H "Content-Type: application/json" -d '{"query": "TSMC"}' http://127.0.0.1:8004/scrape_news
-# curl -X POST -H "Content-Type: application/json" -d '{"query": "Samsung"}' http://127.0.0.1:8004/scrape_news
-# curl -X POST -H "Content-Type: application/json" -d '{"query": "Nvidia earnings"}' http://127.0.0.1:8004/scrape_news
+# Example curl test:
+# curl -X POST -H "Content-Type: application/json" \
+# -d '{"query": "Apple Inc financial results", "results_limit": 5, "summary_limit": 2}' \
+# http://127.0.0.1:8004/scrape_summarized_news
