@@ -1,99 +1,142 @@
-# /streamlit_app/app.py
 import streamlit as st
 import requests
-from streamlit_mic_recorder import mic_recorder # Import the component
+from streamlit_mic_recorder import mic_recorder
+import base64
 
-# Orchestrator URL needs an endpoint that can handle audio eventually
-# For now, let's assume we will create a new endpoint or adapt one.
-# Let's target a new endpoint in orchestrator: /process_voice_query/
 ORCHESTRATOR_VOICE_URL = "http://127.0.0.1:8000/process_voice_query/"
-ORCHESTRATOR_TEXT_URL = "http://127.0.0.1:8000/process_full_brief_query/" # Existing text endpoint
+ORCHESTRATOR_TEXT_URL = "http://127.0.0.1:8000/process_full_brief_query/"
 
-st.title("Multi-Agent Finance Assistant v3 (Voice Enabled)")
+st.title("Multi-Agent Finance Assistant - Chat Interface")
 
-# --- Option for Text Input (Keep for debugging/fallback) ---
-st.subheader("Option 1: Text Input")
-user_text_query = st.text_input(
-    "Type your query (e.g., 'What's the latest on Apple?'):",
-    key="text_query_input"
-)
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-if st.button("Get Brief from Text", key="text_submit"):
-    if user_text_query:
-        payload = {"user_query": user_text_query}
-        try:
-            st.markdown("---")
-            with st.spinner("Processing text query..."):
-                response = requests.post(ORCHESTRATOR_TEXT_URL, json=payload, timeout=120)
-                response.raise_for_status()
-                response_data = response.json()
-                narrative = response_data.get("narrative")
-                st.subheader("Market Brief:")
-                if narrative:
-                    st.write(narrative) # Later this will be TTS
-                else:
-                    st.json(response_data)
-        except Exception as e:
-            st.error(f"Error processing text query: {str(e)}")
-    else:
-        st.warning("Please enter a text query.")
+if "pending_audio" not in st.session_state:
+    st.session_state.pending_audio = None
 
-st.divider()
+if "message_id" not in st.session_state:
+    st.session_state.message_id = 0
 
-# --- Option for Voice Input ---
-st.subheader("Option 2: Voice Input")
-st.write("Click the 'Start Recording' button and speak your query.")
+def add_message(role, content, audio_b64=None):
+    message_data = {
+        "role": role, 
+        "content": content,
+        "id": st.session_state.message_id,
+        "audio": audio_b64
+    }
+    st.session_state.chat_history.append(message_data)
+    st.session_state.message_id += 1
 
-# Use the mic_recorder component
-# It returns audio bytes when recording is stopped or a specific format.
-# We need to check its output format; `output_format="wav"` is good.
-# `key` is important for Streamlit to manage widget state.
-audio_data = mic_recorder(
-    start_prompt="Start Recording 🎤",
-    stop_prompt="Stop Recording ⏹️",
-    just_once=True, # Record once per button interaction cycle
-    use_container_width=False,
-    # format="wav", # Let's try default first, usually gives wav bytes
-    # callback=None, # No callback needed if we process after it returns
-    key='mic_recorder'
-)
+def display_chat_history():
+    for message in st.session_state.chat_history:
+        if message["role"] == "user":
+            with st.chat_message("user"):
+                st.write(message["content"])
+        else:
+            with st.chat_message("assistant"):
+                st.write(message["content"])
+                
+                # Display audio player if available
+                if message.get("audio"):
+                    try:
+                        audio_bytes = base64.b64decode(message["audio"])
+                        b64_encoded = base64.b64encode(audio_bytes).decode()
+                        
+                        # Create persistent audio player
+                        st.markdown("🔊 **Audio Response:**")
+                        audio_html = f"""
+                            <audio controls style="width: 100%;">
+                                <source src="data:audio/mpeg;base64,{b64_encoded}" type="audio/mpeg">
+                                Your browser does not support the audio element.
+                            </audio>
+                        """
+                        st.markdown(audio_html, unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Error loading audio: {str(e)}")
 
-if audio_data and audio_data.get("bytes"):
-    st.audio(audio_data["bytes"], format="audio/wav") # Playback the recorded audio for user confirmation
-    st.write("Processing your voice query...")
-
-    # Send the audio bytes to the Orchestrator
-    # The orchestrator will then forward to STT Agent
-    files = {'audio_file': ('recorded_query.wav', audio_data["bytes"], 'audio/wav')}
+def process_query(query_text):
+    chat_history_for_api = []
+    for msg in st.session_state.chat_history:
+        if msg["role"] == "user":
+            chat_history_for_api.append({"role": "user", "content": msg["content"]})
+        else:
+            chat_history_for_api.append({"role": "assistant", "content": msg["content"]})
+    
+    payload = {
+        "user_query": query_text,
+        "chat_history": chat_history_for_api
+    }
     
     try:
-        with st.spinner("Transcribing and fetching brief... This may take a moment."):
-            # Assuming orchestrator will have an endpoint like /process_voice_query/
-            # This endpoint will handle the audio file and then proceed like process_full_brief_query
-            response = requests.post(ORCHESTRATOR_VOICE_URL, files=files, timeout=150) # Increased timeout
+        with st.spinner("Processing query and generating response..."):
+            response = requests.post(ORCHESTRATOR_TEXT_URL, json=payload, timeout=180)
             response.raise_for_status()
             response_data = response.json()
-            narrative = response_data.get("narrative") # Orchestrator should return the final narrative
-
-            st.subheader("Market Brief (from voice):")
-            if narrative:
-                st.write(narrative) # Later, this will be TTS output
-                # TODO: Add TTS playback here
-            else:
-                st.warning("Received no narrative from voice query. Full response:")
-                st.json(response_data)
-    
-    except requests.exceptions.Timeout:
-        st.error("The request timed out. Voice processing might be taking too long.")
-    except requests.exceptions.ConnectionError:
-        st.error("Failed to connect to the Orchestrator for voice processing.")
-    except requests.exceptions.HTTPError as e:
-        error_message = f"Error from Orchestrator (voice query): {e.response.status_code}"
-        try:
-            error_detail = e.response.json().get("detail", e.response.text)
-            error_message += f" - {error_detail}"
-        except ValueError:
-            error_message += f" - {e.response.text}"
-        st.error(error_message)
+            
+            narrative = response_data.get("narrative_text", "No response generated.")
+            audio_b64 = response_data.get("audio_base64")
+            
+            # Add message with audio data
+            add_message("assistant", narrative, audio_b64)
+                    
     except Exception as e:
-        st.error(f"An unexpected error occurred during voice query processing: {str(e)}")
+        st.error(f"Error processing query: {str(e)}")
+
+# Display chat history
+display_chat_history()
+
+# Input section
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    user_input = st.chat_input("Type your message here...")
+
+with col2:
+    audio_data = mic_recorder(
+        start_prompt="🎤", 
+        stop_prompt="⏹️", 
+        just_once=True, 
+        key=f'mic_recorder_{len(st.session_state.chat_history)}'
+    )
+
+# Handle text input
+if user_input:
+    add_message("user", user_input)
+    with st.spinner("Generating response..."):
+        process_query(user_input)
+    st.rerun()
+
+# Handle voice input
+if audio_data and audio_data.get("bytes"):
+    st.audio(audio_data["bytes"], format="audio/wav")
+    
+    files_for_stt = {'audio_file': ('recorded_query.wav', audio_data["bytes"], 'audio/wav')}
+    try:
+        with st.spinner("Transcribing audio..."):
+            stt_response = requests.post("http://127.0.0.1:8005/transcribe_audio", files=files_for_stt, timeout=45)
+            stt_response.raise_for_status()
+            stt_data = stt_response.json()
+            transcribed_query = stt_data.get("transcribed_text", "Could not transcribe.")
+            
+            if transcribed_query and transcribed_query.strip():
+                add_message("user", transcribed_query)
+                with st.spinner("Generating response..."):
+                    process_query(transcribed_query)
+                st.rerun()
+            else:
+                st.error("Could not transcribe the audio. Please try again.")
+                
+    except Exception as e:
+        st.error(f"Error processing voice query: {str(e)}")
+
+# Sidebar controls
+if st.sidebar.button("Clear Chat History"):
+    st.session_state.chat_history = []
+    st.session_state.message_id = 0
+    st.rerun()
+
+# Show current status
+st.sidebar.markdown(f"**Messages:** {len(st.session_state.chat_history)}")
+if st.session_state.chat_history:
+    audio_count = sum(1 for msg in st.session_state.chat_history if msg.get("audio"))
+    st.sidebar.markdown(f"**Audio responses:** {audio_count}")
