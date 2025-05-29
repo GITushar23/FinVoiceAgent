@@ -1,4 +1,3 @@
-# /agents/scraping_agent.py
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
@@ -11,15 +10,12 @@ load_dotenv() # To load environment variables if you store the API key there
 
 app = FastAPI()
 
-# --- Configuration ---
-# It's better to get this from an environment variable in a real app
 SCRAPINGDOG_API_KEY = os.getenv("SCRAPINGDOG_API_KEY")
 GOOGLE_NEWS_API_URL = "https://api.scrapingdog.com/google_news"
 SCRAPE_API_URL = "https://api.scrapingdog.com/scrape"
 
-REQUEST_TIMEOUT = 45.0 # Timeout for external API calls, summarization can take time
+REQUEST_TIMEOUT = 45.0 
 
-# --- Pydantic Models ---
 class ScrapeRequest(BaseModel):
     query: str
     results_limit: int = 10 # How many initial news results to fetch
@@ -102,7 +98,6 @@ async def fetch_article_summary(article_url: str, client: httpx.AsyncClient) -> 
         print(f"ScrapingAgent: Unexpected error fetching summary for {article_url}: {e}")
         return None
 
-# --- API Endpoint ---
 @app.post("/scrape_summarized_news", response_model=List[SummarizedNewsArticle])
 async def scrape_news_and_summarize(request: ScrapeRequest):
     if not SCRAPINGDOG_API_KEY:
@@ -111,26 +106,22 @@ async def scrape_news_and_summarize(request: ScrapeRequest):
         raise HTTPException(status_code=400, detail="A search query must be provided.")
 
     async with httpx.AsyncClient() as client:
-        # 1. Fetch the initial list of articles
         initial_articles = await fetch_initial_news_list(request.query, request.results_limit, client)
 
         if not initial_articles:
             print(f"ScrapingAgent: No initial articles found for query '{request.query}'. Returning empty list.")
             return []
 
-        # 2. Select top N articles for summarization (as per request.summary_limit)
         articles_to_summarize = initial_articles[:request.summary_limit]
         
         print(f"ScrapingAgent: Attempting to summarize top {len(articles_to_summarize)} articles.")
 
-        # 3. Create tasks to fetch summaries concurrently
         summary_tasks = []
         for article_stub in articles_to_summarize:
             summary_tasks.append(fetch_article_summary(str(article_stub.url), client)) # Ensure URL is string
 
         summaries = await asyncio.gather(*summary_tasks)
 
-        # 4. Combine initial article data with their summaries
         final_articles: List[SummarizedNewsArticle] = []
         for i, article_stub in enumerate(articles_to_summarize):
             summary_content = summaries[i] # This will be None if summarization failed
@@ -140,18 +131,6 @@ async def scrape_news_and_summarize(request: ScrapeRequest):
             )
             final_articles.append(summarized_article)
         
-        # Optionally, add the rest of the initial articles that weren't summarized
-        # for article_stub in initial_articles[request.summary_limit:]:
-        #     final_articles.append(SummarizedNewsArticle(**article_stub.model_dump(), summary=None))
 
         print(f"ScrapingAgent: Processed {len(final_articles)} articles for query '{request.query}'.")
         return final_articles
-
-# To run this agent (from the root directory of your project):
-# cd agents
-# uvicorn scraping_agent:app --reload --port 8004
-#
-# Example curl test:
-# curl -X POST -H "Content-Type: application/json" \
-# -d '{"query": "Apple Inc financial results", "results_limit": 5, "summary_limit": 2}' \
-# http://127.0.0.1:8004/scrape_summarized_news

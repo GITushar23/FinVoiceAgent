@@ -1,4 +1,3 @@
-# /agents/api_agent.py
 import os
 from fastapi import FastAPI, HTTPException
 import httpx # Using httpx for async requests
@@ -36,7 +35,6 @@ async def fetch_stock_data_alphavantage(symbol: str):
 
     time_series = data["Time Series (Daily)"]
     
-    # Get the latest two available dates
     dates = sorted(time_series.keys(), reverse=True)
     if len(dates) < 2:
         raise HTTPException(status_code=404, detail=f"Not enough historical data found for {symbol} to get current and previous day.")
@@ -71,14 +69,3 @@ async def get_stock_data(symbol: str):
     except Exception as e:
         # Catch any other unexpected errors during the fetch or processing
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-# To run this agent (from the root directory of your project):
-# cd agents
-# uvicorn api_agent:app --reload --port 8001
-#
-# Then you can test it in your browser or with curl:
-# curl http://127.0.0.1:8001/stock/TSM
-# curl http://127.0.0.1:8001/stock/005930.KS 
-# (Samsung might require its specific exchange ticker like '005930.KS' for KRX, 
-# 'SMSN.IL' for LSE, etc. depending on what AlphaVantage supports well. 
-# 'MSFT' or 'NVDA' are good general test cases too if Asian ones give trouble initially.)

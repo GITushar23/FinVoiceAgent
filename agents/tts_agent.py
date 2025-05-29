@@ -6,15 +6,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from typing import List, Generator
+from typing import List, Generator, AsyncGenerator
 
 load_dotenv()
 
 app = FastAPI()
 
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
-# Using Aura Hera model, good for conversational speech. You can change model.
-# List of models: https://developers.deepgram.com/docs/tts-models
 DEEPGRAM_TTS_URL = "https://api.deepgram.com/v1/speak?model=aura-hera-en" 
 
 if not DEEPGRAM_API_KEY:
@@ -37,13 +35,13 @@ def segment_text_by_sentence(text: str) -> List[str]:
         segments.append(text[start:boundary_index + 1].strip())
         start = boundary_index + 1
     final_segment = text[start:].strip()
-    if final_segment: # Add last segment only if it's not empty
+    if final_segment: 
         segments.append(final_segment)
-    return [seg for seg in segments if seg] # Filter out any potentially empty segments
+    return [seg for seg in segments if seg]
 
-async def stream_audio_segments(segments: List[str], client: httpx.AsyncClient) -> Generator[bytes, None, None]:
+async def stream_audio_segments(segments: List[str], client: httpx.AsyncClient) -> AsyncGenerator[bytes, None]:
     for segment_text in segments:
-        if not segment_text: continue # Skip empty segments
+        if not segment_text: continue 
         payload = {"text": segment_text}
         try:
             print(f"TTS Agent: Requesting audio for segment: '{segment_text[:50]}...'")
@@ -55,11 +53,8 @@ async def stream_audio_segments(segments: List[str], client: httpx.AsyncClient) 
             print(f"TTS Agent: Streamed audio for segment: '{segment_text[:50]}...'")
         except httpx.HTTPStatusError as e:
             print(f"TTS Agent: HTTP error for segment '{segment_text[:30]}...': {e.response.status_code} - {e.response.text}")
-            # Optionally, yield a small silent chunk or skip, or raise error
-            # For now, just prints and skips the segment
         except Exception as e:
             print(f"TTS Agent: Error processing segment '{segment_text[:30]}...': {str(e)}")
-            # Skip problematic segment
 
 
 @app.post("/synthesize_speech")
@@ -73,29 +68,19 @@ async def synthesize_speech_endpoint(request: TTSRequest):
     segments = segment_text_by_sentence(request.text)
     if not segments:
         print("TTS Agent: Text resulted in no segments.")
-        # Return an empty stream or an error if no valid segments
+
         async def empty_generator():
             if False: yield # This makes it an async generator
         return StreamingResponse(empty_generator(), media_type="audio/mpeg")
 
 
     client = httpx.AsyncClient()
-    # The generator needs to be passed to StreamingResponse directly
-    # Ensure that the client is available for the duration of the streaming if passed into the generator
-    # A simpler way for FastAPI is to define the generator within the endpoint
-    # or ensure client is managed correctly.
-
     async def audio_stream_generator():
-        # This new client will be used by the generator
+
         async with httpx.AsyncClient() as stream_client:
             async for chunk in stream_audio_segments(segments, stream_client):
                 yield chunk
         print("TTS Agent: Finished streaming all audio segments.")
 
-    # Deepgram TTS often outputs MP3 by default with this endpoint
     return StreamingResponse(audio_stream_generator(), media_type="audio/mpeg")
 
-
-# To run this agent:
-# cd agents
-# uvicorn tts_agent:app --reload --port 8006

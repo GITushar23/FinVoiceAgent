@@ -1,4 +1,3 @@
-# /agents/language_agent.py
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -31,13 +30,11 @@ else:
 
 app = FastAPI()
 
-# --- Models for Keyword Generation (remains the same) ---
 class KeywordGenerationRequest(BaseModel):
     user_query: str
 class KeywordGenerationResponse(BaseModel):
     keywords: str
 
-# --- Models for Synthesis (updated to include chat_history) ---
 class ScrapedArticleInput(BaseModel):
     title: Optional[str] = None; url: str; source: Optional[str] = None
     lastUpdated: Optional[str] = None; snippet: Optional[str] = None; summary: Optional[str] = None
@@ -58,7 +55,6 @@ class SynthesisResponse(BaseModel):
 
 @app.post("/generate_keywords", response_model=KeywordGenerationResponse)
 async def generate_keywords_for_news_search(request: KeywordGenerationRequest):
-    # ... (this endpoint logic remains unchanged from your provided version)
     if not llm: raise HTTPException(status_code=503, detail="Language model not initialized.")
     prompt_text = f"""Given the user's financial query: "{request.user_query}" Generate a concise and effective search query string (2 to 5 keywords, including company names or symbols if present) for financial news. Focus on entities, actions, and financial terms. E.g., "Apple AAPL TSMC TSM regulations risk news" or "Nvidia NVDA earnings results". Output ONLY the search query string."""
     messages = [HumanMessage(content=prompt_text)]
@@ -80,7 +76,6 @@ def generate_llm_narrative_langchain(
     if not llm:
         raise HTTPException(status_code=503, detail="LangChain Google LLM not initialized.")
 
-    # 1. Construct LangChain message history
     langchain_messages: List[SystemMessage | HumanMessage | AIMessage] = [
         SystemMessage(content="You are a highly capable financial analyst AI. Your task is to generate a concise, data-driven, and professional market brief—no longer than 3–4 lines—based on the user's query, conversation history, and provided information. Be crisp, accurate, and professional.")
     ]
@@ -91,7 +86,6 @@ def generate_llm_narrative_langchain(
             elif msg.role == "assistant": # Assuming "assistant" role from history
                 langchain_messages.append(AIMessage(content=msg.content))
 
-    # 2. Prepare current context (RAG, News, Portfolio)
     rag_context_string = "\n\n".join(retrieved_rag_context)
     news_context_parts = []
     if scraped_news_articles:
@@ -106,7 +100,6 @@ def generate_llm_narrative_langchain(
     if portfolio_csv_data:
         portfolio_info_string = f"\nPortfolio Data (raw CSV - interpret for holdings/context):\n<csv>\n{portfolio_csv_data}\n</csv>\n"
     
-    # 3. Construct the content for the *current* user query, including all context
     current_turn_prompt_content = f"""
 User's Current Query: "{user_query}"
 
