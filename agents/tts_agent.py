@@ -41,7 +41,7 @@ def segment_text_by_sentence(text: str) -> List[str]:
 
 async def stream_audio_segments(segments: List[str], client: httpx.AsyncClient) -> AsyncGenerator[bytes, None]:
     for segment_text in segments:
-        if not segment_text: continue 
+        if not segment_text: continue # Skip empty segments
         payload = {"text": segment_text}
         try:
             print(f"TTS Agent: Requesting audio for segment: '{segment_text[:50]}...'")
@@ -68,7 +68,7 @@ async def synthesize_speech_endpoint(request: TTSRequest):
     segments = segment_text_by_sentence(request.text)
     if not segments:
         print("TTS Agent: Text resulted in no segments.")
-
+        # Return an empty stream or an error if no valid segments
         async def empty_generator():
             if False: yield # This makes it an async generator
         return StreamingResponse(empty_generator(), media_type="audio/mpeg")
@@ -76,7 +76,7 @@ async def synthesize_speech_endpoint(request: TTSRequest):
 
     client = httpx.AsyncClient()
     async def audio_stream_generator():
-
+        # This new client will be used by the generator
         async with httpx.AsyncClient() as stream_client:
             async for chunk in stream_audio_segments(segments, stream_client):
                 yield chunk

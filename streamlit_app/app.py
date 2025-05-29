@@ -3,9 +3,11 @@ import requests
 from streamlit_mic_recorder import mic_recorder
 import base64
 
-
-ORCHESTRATOR_VOICE_URL = "http://127.0.0.1:8000/process_voice_query/"
-ORCHESTRATOR_TEXT_URL = "http://127.0.0.1:8000/process_full_brief_query/"
+# Updated URLs to use the single port with different endpoints
+BASE_URL = "http://127.0.0.1:8000"
+ORCHESTRATOR_VOICE_URL = f"{BASE_URL}/orchestrator/process_voice_query/"
+ORCHESTRATOR_TEXT_URL = f"{BASE_URL}/orchestrator/process_full_brief_query/"
+STT_URL = f"{BASE_URL}/stt/transcribe_audio"
 
 st.title("Multi-Agent Finance Assistant - Chat Interface")
 
@@ -83,6 +85,25 @@ def process_query(query_text):
     except Exception as e:
         st.error(f"Error processing query: {str(e)}")
 
+# Display connection status
+with st.sidebar:
+    st.markdown("### 🔗 Connection Status")
+    try:
+        health_response = requests.get(f"{BASE_URL}/health", timeout=5)
+        if health_response.status_code == 200:
+            st.success("✅ Connected to Multi-Agent System")
+        else:
+            st.error("❌ Connection Error")
+    except:
+        st.error("❌ Cannot connect to backend")
+    
+    st.markdown("### 📊 System Info")
+    st.markdown(f"**Base URL:** `{BASE_URL}`")
+    st.markdown(f"**Messages:** {len(st.session_state.chat_history)}")
+    if st.session_state.chat_history:
+        audio_count = sum(1 for msg in st.session_state.chat_history if msg.get("audio"))
+        st.markdown(f"**Audio responses:** {audio_count}")
+
 # Display chat history
 display_chat_history()
 
@@ -114,7 +135,7 @@ if audio_data and audio_data.get("bytes"):
     files_for_stt = {'audio_file': ('recorded_query.wav', audio_data["bytes"], 'audio/wav')}
     try:
         with st.spinner("Transcribing audio..."):
-            stt_response = requests.post("http://127.0.0.1:8005/transcribe_audio", files=files_for_stt, timeout=45)
+            stt_response = requests.post(STT_URL, files=files_for_stt, timeout=45)
             stt_response.raise_for_status()
             stt_data = stt_response.json()
             transcribed_query = stt_data.get("transcribed_text", "Could not transcribe.")
@@ -136,8 +157,17 @@ if st.sidebar.button("Clear Chat History"):
     st.session_state.message_id = 0
     st.rerun()
 
-# Show current status
-st.sidebar.markdown(f"**Messages:** {len(st.session_state.chat_history)}")
-if st.session_state.chat_history:
-    audio_count = sum(1 for msg in st.session_state.chat_history if msg.get("audio"))
-    st.sidebar.markdown(f"**Audio responses:** {audio_count}")
+# Add endpoint information in sidebar
+with st.sidebar.expander("🔗 API Endpoints"):
+    st.markdown("""
+    **Available Endpoints:**
+    - `/api` - Stock data
+    - `/language` - LLM processing  
+    - `/retriever` - RAG/Vector search
+    - `/scraping` - News scraping
+    - `/stt` - Speech-to-text
+    - `/tts` - Text-to-speech
+    - `/orchestrator` - Main logic
+    
+    **Documentation:** [localhost:8000/docs](http://localhost:8000/docs)
+    """)

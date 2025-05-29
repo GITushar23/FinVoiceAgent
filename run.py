@@ -1,74 +1,87 @@
+#!/usr/bin/env python3
+"""
+Simple startup script for the Multi-Agent Finance Assistant
+Run this to start the entire application stack
+"""
+
 import subprocess
-import os
-import signal
 import sys
-from fastapi import FastAPI
-from threading import Thread
+import os
+from pathlib import Path
 
-app = FastAPI()
+def start_backend():
+    """Start the FastAPI backend server"""
+    print("🚀 Starting Multi-Agent Finance Assistant Backend...")
+    try:
+        # Start the main FastAPI application
+        subprocess.run([
+            sys.executable, "-m", "uvicorn", "main_app:app",
+            "--host", "0.0.0.0",
+            "--port", "8000",
+            "--reload"
+        ], check=True)
+    except KeyboardInterrupt:
+        print("\n🛑 Backend server stopped by user")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error starting backend: {e}")
+        sys.exit(1)
 
-# Base path
-base_path = os.path.dirname(os.path.abspath(__file__))
+def start_streamlit():
+    """Start the Streamlit frontend"""
+    print("🚀 Starting Streamlit Frontend...")
+    streamlit_app_dir = Path(__file__).parent / "streamlit_app"
+    
+    if not streamlit_app_dir.exists():
+        print(f"❌ Streamlit app directory not found: {streamlit_app_dir}")
+        sys.exit(1)
+    
+    try:
+        subprocess.run([
+            sys.executable, "-m", "streamlit", "run", "app.py"
+        ], cwd=streamlit_app_dir, check=True)
+    except KeyboardInterrupt:
+        print("\n🛑 Streamlit server stopped by user")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error starting Streamlit: {e}")
+        sys.exit(1)
 
-# Define all services to run
-commands = [
-    ["uvicorn", "stt_agent:app", "--port", "8005"],
-    ["uvicorn", "tts_agent:app", "--port", "8006"],
-    ["uvicorn", "retriever_agent:app", "--port", "8002"],
-    ["uvicorn", "language_agent:app", "--port", "8003"],
-    ["uvicorn", "scraping_agent:app", "--port", "8004"],
-    ["uvicorn", "orchestrator:app", "--port", "8000"],
-    ["streamlit", "run", "app.py"],
-]
+def main():
+    """Main startup function"""
+    if len(sys.argv) > 1:
+        command = sys.argv[1].lower()
+        
+        if command == "backend":
+            start_backend()
+        elif command == "frontend":
+            start_streamlit()
+        elif command == "help":
+            print("""
+Multi-Agent Finance Assistant Startup Script
 
-# Corresponding working directories
-working_dirs = [
-    os.path.join(base_path, "agents"),
-    os.path.join(base_path, "agents"),
-    os.path.join(base_path, "agents"),
-    os.path.join(base_path, "agents"),
-    os.path.join(base_path, "agents"),
-    os.path.join(base_path, "orchestrator"),
-    os.path.join(base_path, "streamlit_app"),
-]
+Usage:
+    python startup.py [command]
 
-# Track subprocesses
-processes = []
+Commands:
+    backend     - Start only the FastAPI backend server
+    frontend    - Start only the Streamlit frontend
+    help        - Show this help message
 
-@app.on_event("shutdown")
-def shutdown_event():
-    stop_all_services()
+If no command is provided, starts the backend server by default.
 
-def run_services():
-    for cmd, cwd in zip(commands, working_dirs):
-        print(f"🚀 Starting: {' '.join(cmd)} in {cwd}")
-        proc = subprocess.Popen(cmd, cwd=cwd)
-        processes.append(proc)
-    print("✅ All services started.")
+Development Setup:
+1. Start backend: python startup.py backend
+2. In another terminal, start frontend: python startup.py frontend
 
-def stop_all_services():
-    print("🛑 Stopping all services...")
-    for proc in processes:
-        try:
-            proc.terminate()
-        except Exception as e:
-            print(f"Error terminating process: {e}")
-    processes.clear()
+The backend will be available at: http://localhost:8000
+The frontend will be available at: http://localhost:8501
+            """)
+        else:
+            print(f"❌ Unknown command: {command}")
+            print("Use 'python startup.py help' for usage information")
+            sys.exit(1)
+    else:
+        # Default to starting backend
+        start_backend()
 
-@app.get("/")
-def read_root():
-    return {"message": "Service Orchestrator is Running"}
-
-@app.post("/start")
-def start_services():
-    if processes:
-        return {"message": "⚠️ Services are already running."}
-    Thread(target=run_services, daemon=True).start()
-    return {"message": "✅ Services started."}
-
-@app.post("/stop")
-def stop_services():
-    if not processes:
-        return {"message": "⚠️ No running services to stop."}
-    stop_all_services()
-    return {"message": "🛑 Services stopped."}
+if __name__ == "__main__":
+    main()

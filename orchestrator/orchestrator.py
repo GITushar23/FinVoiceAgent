@@ -9,11 +9,13 @@ from pathlib import Path
 
 app = FastAPI()
 
-RETRIEVER_AGENT_URL = "http://127.0.0.1:8002"
-LANGUAGE_AGENT_URL = "http://127.0.0.1:8003"
-SCRAPING_AGENT_URL = "http://127.0.0.1:8004"
-STT_AGENT_URL = "http://127.0.0.1:8005"
-TTS_AGENT_URL = "http://127.0.0.1:8006"
+# Updated URLs to use the single port with different endpoints
+BASE_URL = "http://127.0.0.1:8000"
+RETRIEVER_AGENT_URL = f"{BASE_URL}/retriever"
+LANGUAGE_AGENT_URL = f"{BASE_URL}/language"
+SCRAPING_AGENT_URL = f"{BASE_URL}/scraping"
+STT_AGENT_URL = f"{BASE_URL}/stt"
+TTS_AGENT_URL = f"{BASE_URL}/tts"
 
 PORTFOLIO_CSV_PATH = Path(__file__).resolve().parent.parent / "data_ingestion" / "mock_portfolio_multi_day_real_companies.csv"
 

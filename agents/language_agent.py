@@ -100,6 +100,7 @@ def generate_llm_narrative_langchain(
     if portfolio_csv_data:
         portfolio_info_string = f"\nPortfolio Data (raw CSV - interpret for holdings/context):\n<csv>\n{portfolio_csv_data}\n</csv>\n"
     
+    # 3. Construct the content for the *current* user query, including all context
     current_turn_prompt_content = f"""
 User's Current Query: "{user_query}"
 
