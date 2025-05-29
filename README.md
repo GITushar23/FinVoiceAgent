@@ -31,27 +31,61 @@ The Multi-Agent Finance Assistant is a comprehensive financial analysis system t
 The system follows a microservices architecture with multiple specialized agents:
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Streamlit     │    │  Orchestrator   │    │   API Agent     │
-│   Frontend      │────│     (Main       │────│  (Stock Data)   │
-│                 │    │    Controller)  │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-┌───────▼──────┐    ┌────────▼────────┐    ┌──────▼──────┐
-│ Language     │    │   Scraping      │    │ Retriever   │
-│ Agent (LLM)  │    │   Agent (News)  │    │ Agent (RAG) │
-└──────────────┘    └─────────────────┘    └─────────────┘
-                              │
-                    ┌─────────┼─────────┐
-                    │                   │
-            ┌───────▼──────┐    ┌──────▼──────┐
-            │ STT Agent    │    │ TTS Agent   │
-            │ (Speech-to-  │    │ (Text-to-   │
-            │  Text)       │    │  Speech)    │
-            └──────────────┘    └─────────────┘
+┌─────────────────┐
+│   Streamlit     │
+│   Frontend      │
+└────────┬────────┘
+         │ User Input (Text or Speech)
+         ▼
+┌─────────────────┐
+│  Orchestrator   │
+│  (Main Controller)  
+└────────┬────────┘
+         │
+         ▼
+ ┌───────┴────────┐
+ │ Input Handling │
+ └───────┬────────┘
+         │
+         ▼
+ ┌───────▼──────┐
+ │ STT Agent    │◄────── Speech input
+ │ (Speech-to-  │
+ │  Text)       │
+ └──────────────┘
+         │
+         ▼
+ ┌─────────────────┐
+ │ Language Agent  │
+ │ (LLM - Query     │
+ │ Understanding)   │
+ └────────┬────────┘
+          │
+   ┌──────┼────────────┬─────────────────┐
+   │      │            │                 │
+   ▼      ▼            ▼                 ▼
+┌────┐ ┌────────────┐ ┌──────────────┐ ┌─────────────────┐
+│ API│ │ Scraping   │ │ Retriever    │ │ (Optional Other │
+│Agent│ │ Agent (News)│ │ Agent (RAG) │ │ Agents / Tools) │
+└────┘ └────────────┘ └──────────────┘ └─────────────────┘
+   \__________________________________________/
+                     │
+                     ▼
+         ┌─────────────────────┐
+         │  Response Text Gen  │
+         └────────┬────────────┘
+                  │
+        ┌─────────▼─────────┐
+        │ TTS Agent         │────► Speech Output
+        │ (Text-to-Speech)  │
+        └───────────────────┘
+                  │
+                  ▼
+         ┌─────────────────┐
+         │   Streamlit     │
+         │   Frontend      │
+         └─────────────────┘
+
 ```
 
 ## Getting Started
