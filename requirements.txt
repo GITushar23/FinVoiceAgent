@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard] # [standard] includes gunicorn, ujson, etc. for production
+python-dotenv
+httpx
+pydantic
+deepgram-sdk>=3.0 # Or the specific version you are using
+# For language_agent
+langchain-google-genai
+langchain-core
+langchain-community
+langchain # For TextSplitter, etc.
+faiss-cpu
+streamlit
+requests
+streamlit-mic-recorder

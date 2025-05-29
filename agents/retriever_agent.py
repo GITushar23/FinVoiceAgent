@@ -75,7 +75,7 @@ app = FastAPI()
 async def startup_event():
     print("Retriever Agent starting up. Initializing vector store...")
     try:
-        initialize_vector_store()
+        # initialize_vector_store()
         if vector_store:
             print("Vector store initialized successfully on startup.")
         else:

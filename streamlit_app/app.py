@@ -3,6 +3,69 @@ import requests
 from streamlit_mic_recorder import mic_recorder
 import base64
 
+import subprocess
+import os
+import signal
+import sys
+
+# Base path
+base_path = r"D:\ragai_intern\ass\FinVoiceAgent"
+
+# Define all services to run
+commands = [
+    ["uvicorn", "stt_agent:app", "--reload", "--port", "8005"],
+    ["uvicorn", "tts_agent:app", "--reload", "--port", "8006"],
+    ["uvicorn", "retriever_agent:app", "--reload", "--port", "8002"],
+    ["uvicorn", "language_agent:app", "--reload", "--port", "8003"],
+    ["uvicorn", "scraping_agent:app", "--reload", "--port", "8004"],
+    ["uvicorn", "orchestrator:app", "--reload", "--port", "8000"],
+    # ["streamlit", "run", "app.py"],
+]
+
+# Corresponding working directories
+working_dirs = [
+    os.path.join(base_path, "agents"),
+    os.path.join(base_path, "agents"),
+    os.path.join(base_path, "agents"),
+    os.path.join(base_path, "agents"),
+    os.path.join(base_path, "agents"),
+    os.path.join(base_path, "orchestrator"),
+    # os.path.join(base_path, "streamlit_app"),
+]
+
+# Track subprocesses
+processes = []
+
+def cleanup():
+    print("\n🛑 Stopping all processes...")
+    for proc in processes:
+        try:
+            proc.terminate()
+        except Exception as e:
+            print(f"Error terminating process: {e}")
+    sys.exit(0)
+
+try:
+    for cmd, cwd in zip(commands, working_dirs):
+        print(f"Starting: {' '.join(cmd)} in {cwd}")
+        proc = subprocess.Popen(cmd, cwd=cwd)
+        processes.append(proc)
+
+    print("✅ All services running in background. Press Ctrl+C to stop.")
+    while True:
+        for proc in processes:
+            if proc.poll() is not None:
+                print(f"⚠️ Process {' '.join(proc.args)} exited.")
+                processes.remove(proc)
+        if not processes:
+            break
+
+except KeyboardInterrupt:
+    cleanup()
+except Exception as e:
+    print(f"Error: {e}")
+    cleanup()
+
 ORCHESTRATOR_VOICE_URL = "http://127.0.0.1:8000/process_voice_query/"
 ORCHESTRATOR_TEXT_URL = "http://127.0.0.1:8000/process_full_brief_query/"
 
