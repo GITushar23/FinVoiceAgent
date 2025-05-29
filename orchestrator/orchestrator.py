@@ -10,7 +10,7 @@ from pathlib import Path
 app = FastAPI()
 
 # Updated URLs to use the single port with different endpoints
-BASE_URL = "https://finvoiceagent.onrender.com/"
+BASE_URL = "https://finvoiceagent.onrender.com"
 RETRIEVER_AGENT_URL = f"{BASE_URL}/retriever"
 LANGUAGE_AGENT_URL = f"{BASE_URL}/language"
 SCRAPING_AGENT_URL = f"{BASE_URL}/scraping"
