@@ -169,5 +169,5 @@ with st.sidebar.expander("🔗 API Endpoints"):
     - `/tts` - Text-to-speech
     - `/orchestrator` - Main logic
     
-    **Documentation:** [localhost:8000/docs](http://localhost:8000/docs)
+    **Documentation:** [DOCS](https://github.com/GITushar23/FinVoiceAgent/blob/main/README.md)
     """)
