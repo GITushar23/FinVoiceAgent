@@ -355,4 +355,4 @@ python -m uvicorn main_app:app --host 0.0.0.0 --port 8000 --log-level debug
 
 ---
 
-For detailed AI tool usage and development logs, see [`docs/ai_tool_usage.md`](docs/ai_tool_usage.md).
+For detailed AI tool usage and development logs, see [`docs.md`](docs.md).
