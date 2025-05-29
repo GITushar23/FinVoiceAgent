@@ -4,7 +4,7 @@ from streamlit_mic_recorder import mic_recorder
 import base64
 
 # Updated URLs to use the single port with different endpoints
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "https://finvoiceagent.onrender.com/"
 ORCHESTRATOR_VOICE_URL = f"{BASE_URL}/orchestrator/process_voice_query/"
 ORCHESTRATOR_TEXT_URL = f"{BASE_URL}/orchestrator/process_full_brief_query/"
 STT_URL = f"{BASE_URL}/stt/transcribe_audio"
