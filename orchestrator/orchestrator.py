@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import httpx
 from typing import List, Optional, Dict, Any
 import base64
+from pathlib import Path
 
 app = FastAPI()
 
@@ -14,7 +15,8 @@ SCRAPING_AGENT_URL = "http://127.0.0.1:8004"
 STT_AGENT_URL = "http://127.0.0.1:8005"
 TTS_AGENT_URL = "http://127.0.0.1:8006"
 
-PORTFOLIO_CSV_PATH = r"D:\ragai_intern\mock_portfolio_multi_day_real_companies.csv"
+PORTFOLIO_CSV_PATH = Path(__file__).resolve().parent.parent / "data_ingestion" / "mock_portfolio_multi_day_real_companies.csv"
+
 
 def read_portfolio_csv() -> Optional[str]:
     try:
