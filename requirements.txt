@@ -8,6 +8,10 @@ langchain_google_genai==2.1.5
 pydantic==1.10.13
 python-dotenv==1.1.0
 Requests==2.32.3
-streamlit==1.32.2
 streamlit==1.45.1
 streamlit_mic_recorder==0.0.8
+uvicorn[standard] # [standard] includes gunicorn, ujson, etc. for production
+python-dotenv
+httpx
+pydantic
+faiss-cpu
